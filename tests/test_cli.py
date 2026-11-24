@@ -1,5 +1,6 @@
 """CLI seam: the real pipeline around a fake Embedder and a fake ChunkRepository."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -239,3 +240,49 @@ def test_ctrl_c_prints_interrupted_and_exits_130(app: App, capsys: pytest.Captur
 
     assert exit_code == ExitCode.INTERRUPTED == 130
     assert capsys.readouterr().err.splitlines()[-1] == "Interrupted."
+
+
+def _corrupt_pdf(directory: Path) -> Path:
+    path = directory / "corrupt.pdf"
+    # No PDF header, so pypdf also logs its own "invalid pdf header" warning, which must not reach stderr.
+    path.write_bytes(b"this is not a pdf at all")
+    return path
+
+
+def _text_file(directory: Path) -> Path:
+    path = directory / "notes.txt"
+    path.write_text("Plain text is not a supported format.", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("make_document", "expected_error"),
+    [
+        (lambda directory: directory / "missing.docx", "File not found: {path}"),
+        (lambda directory: directory, "File not found: {path}"),
+        (_text_file, "Unsupported file type '.txt': only .pdf and .docx are supported"),
+        (_corrupt_pdf, "Could not read corrupt.pdf: the file is corrupt, password-protected, or not a real PDF/DOCX"),
+        (
+            lambda _directory: SAMPLES_DIR / "scanned_no_text.pdf",
+            "No extractable text in scanned_no_text.pdf (it may be a scanned image; OCR is not supported)",
+        ),
+        (lambda _directory: SAMPLES_DIR / "empty.docx", "No extractable text in empty.docx"),
+    ],
+    ids=["missing-file", "directory", "unsupported-type", "unreadable", "scanned-pdf", "empty-docx"],
+)
+def test_a_document_error_prints_one_error_line_exits_3_and_never_reaches_gemini_or_the_database(
+    app: App,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    make_document: Callable[[Path], Path],
+    expected_error: str,
+) -> None:
+    path = make_document(tmp_path)
+
+    exit_code = app.index("--file", str(path), "--strategy", "paragraph")
+
+    assert exit_code == ExitCode.DOCUMENT == 3
+    assert capsys.readouterr().err == f"Error: {expected_error.format(path=path)}\n"
+    assert app.embedder.embedded_texts == []
+    assert not app.repository.schema_ensured
+    assert app.repository.chunk_sets == {}

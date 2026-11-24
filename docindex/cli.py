@@ -8,10 +8,12 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Protocol
 
-from docindex.errors import ConfigurationError, DocIndexError
+from docindex.errors import ConfigurationError, DocIndexError, DocumentError
 
 # google-genai 3.6.1 logs through httpx2, a fork of httpx.
 QUIET_LOGGERS = ("httpx", "httpx2", "google_genai")
+# pypdf logs a WARNING (e.g. "invalid pdf header") before failing on a bad file; our one Error line already says it.
+VERBOSE_ONLY_LOGGERS = ("pypdf",)
 OUTPUT_ENCODING = "utf-8"
 LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
 UNEXPECTED_FAILURE_MESSAGE = "unexpected failure (run with --verbose for details)"
@@ -35,6 +37,7 @@ class ExitCode(IntEnum):
 # Looked up along the exception's MRO, so a subclass inherits its category's code.
 EXIT_CODES_BY_ERROR: dict[type[DocIndexError], ExitCode] = {
     ConfigurationError: ExitCode.USAGE,
+    DocumentError: ExitCode.DOCUMENT,
 }
 
 
@@ -92,10 +95,12 @@ def use_utf8_output() -> None:
 
 
 def configure_logging(verbose: bool) -> None:
-    """Send logs to stderr at INFO, or DEBUG when verbose; keep HTTP client loggers quiet."""
+    """Send logs to stderr at INFO, or DEBUG when verbose; keep HTTP client and parser loggers quiet."""
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format=LOG_FORMAT, stream=sys.stderr, force=True)
     for name in QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in VERBOSE_ONLY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.NOTSET if verbose else logging.ERROR)
 
 
 def _exit_status(exit_request: SystemExit) -> int:
