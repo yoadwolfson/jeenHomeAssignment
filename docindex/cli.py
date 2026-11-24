@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Protocol
 
-from docindex.errors import ConfigurationError, DocIndexError, DocumentError
+from docindex.errors import ConfigurationError, DocIndexError, DocumentError, EmbeddingError
 
 # google-genai 3.6.1 logs through httpx2, a fork of httpx.
 QUIET_LOGGERS = ("httpx", "httpx2", "google_genai")
@@ -38,6 +38,7 @@ class ExitCode(IntEnum):
 EXIT_CODES_BY_ERROR: dict[type[DocIndexError], ExitCode] = {
     ConfigurationError: ExitCode.USAGE,
     DocumentError: ExitCode.DOCUMENT,
+    EmbeddingError: ExitCode.EMBEDDING,
 }
 
 

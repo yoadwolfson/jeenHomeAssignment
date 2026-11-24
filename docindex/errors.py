@@ -61,3 +61,29 @@ class UnsupportedFileTypeError(DocumentError):
         )
         self.extension = extension
         self.supported_extensions = tuple(supported_extensions)
+
+
+class EmbeddingError(DocIndexError):
+    """The Gemini embedding request failed."""
+
+
+class EmbeddingAuthError(EmbeddingError):
+    """Gemini rejected the API key."""
+
+    def __init__(self) -> None:
+        super().__init__("Gemini rejected the API key: check GEMINI_API_KEY in .env")
+
+
+class EmbeddingQuotaError(EmbeddingError):
+    """Gemini's quota or rate limit was still exceeded after retrying."""
+
+    def __init__(self) -> None:
+        super().__init__("Gemini quota or rate limit exceeded after retries: wait and try again")
+
+
+class EmbeddingServiceError(EmbeddingError):
+    """Gemini failed for another reason: a server error, a network failure or a malformed response."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"Gemini embedding request failed: {reason}")
+        self.reason = reason

@@ -10,7 +10,13 @@ from docindex.cli import ExitCode, run_cli
 from docindex.commands import IndexCommand, SearchCommand
 from docindex.config import Settings
 from docindex.domain import MAX_CHUNK_CHARS, ChunkRecord, SplitStrategy
-from docindex.errors import ConfigurationError
+from docindex.errors import (
+    ConfigurationError,
+    EmbeddingAuthError,
+    EmbeddingError,
+    EmbeddingQuotaError,
+    EmbeddingServiceError,
+)
 from tests.fakes import FakeChunkRepository, FakeEmbedder, bag_of_letters_vector, constant
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
@@ -286,3 +292,37 @@ def test_a_document_error_prints_one_error_line_exits_3_and_never_reaches_gemini
     assert app.embedder.embedded_texts == []
     assert not app.repository.schema_ensured
     assert app.repository.chunk_sets == {}
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [EmbeddingAuthError(), EmbeddingQuotaError(), EmbeddingServiceError("503")],
+    ids=["auth", "quota", "service"],
+)
+def test_an_embedding_error_prints_its_message_exits_4_and_leaves_stored_chunks_untouched(
+    app: App, capsys: pytest.CaptureFixture[str], failure: EmbeddingError
+) -> None:
+    earlier_set = [ChunkRecord(DOCX_NAME, SplitStrategy.paragraph, 0, "earlier chunk", bag_of_letters_vector("x"))]
+    app.repository.replace_chunks(DOCX_NAME, SplitStrategy.paragraph, earlier_set)
+    app.embedder.failure = failure
+
+    exit_code = app.index_docx()
+
+    assert exit_code == ExitCode.EMBEDDING == 4
+    assert capsys.readouterr().err.splitlines()[-1] == f"Error: {failure.message}"
+    assert app.repository.chunk_sets == {(DOCX_NAME, SplitStrategy.paragraph): earlier_set}
+
+
+def test_an_embedding_error_shows_its_cause_only_under_verbose(app: App, capsys: pytest.CaptureFixture[str]) -> None:
+    failure = EmbeddingServiceError("500")
+    failure.__cause__ = RuntimeError("500 INTERNAL. secret upstream detail")
+    app.embedder.failure = failure
+
+    quiet_exit = app.search("--query", "anything")
+    quiet_err = capsys.readouterr().err
+    verbose_exit = app.search("--query", "anything", "--verbose")
+    verbose_err = capsys.readouterr().err
+
+    assert quiet_exit == verbose_exit == ExitCode.EMBEDDING
+    assert "secret upstream detail" not in quiet_err
+    assert "secret upstream detail" in verbose_err

@@ -2,8 +2,6 @@
 
 from collections.abc import Callable
 
-from google import genai
-
 from docindex.chunking import (
     ChunkerFactory,
     FixedSizeChunker,
@@ -14,7 +12,7 @@ from docindex.chunking import (
 from docindex.config import Settings
 from docindex.domain import SplitStrategy
 from docindex.embedding import Embedder
-from docindex.embedding.gemini import GeminiEmbedder
+from docindex.embedding.gemini import GeminiEmbedder, build_gemini_client
 from docindex.extraction import DocxExtractor, ExtractorRegistry, PdfExtractor, TextCleaner
 from docindex.services import IndexingService, SearchService
 from docindex.storage import ChunkRepository, PostgresChunkRepository
@@ -25,7 +23,7 @@ type RepositoryBuilder = Callable[[Settings], ChunkRepository]
 
 def build_gemini_embedder(settings: Settings) -> Embedder:
     """Build the Gemini-backed embedder."""
-    return GeminiEmbedder(genai.Client(api_key=settings.gemini_api_key))
+    return GeminiEmbedder(build_gemini_client(settings.gemini_api_key))
 
 
 def build_extractor_registry() -> ExtractorRegistry:
