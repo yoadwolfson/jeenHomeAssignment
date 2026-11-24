@@ -15,6 +15,7 @@ from tests.fakes import FakeChunkRepository, FakeEmbedder, bag_of_letters_vector
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 DOCX_SAMPLE = SAMPLES_DIR / "remote_work_policy.docx"
 DOCX_NAME = DOCX_SAMPLE.name
+PDF_SAMPLE = SAMPLES_DIR / "urban_beekeeping.pdf"
 TEST_SETTINGS = Settings(gemini_api_key="test-key", postgres_url="postgresql://user:pw@localhost:5432/test")
 
 
@@ -61,6 +62,20 @@ def test_indexing_a_docx_by_paragraph_stores_its_chunks_and_prints_a_summary(
         f"Indexed {DOCX_NAME} with strategy 'paragraph': {len(stored)} chunks stored "
         "(replaced previous chunks for this file and strategy, if any).\n"
     )
+
+
+def test_indexing_a_pdf_with_an_upper_case_extension_stores_one_chunk_per_paragraph(
+    app: App, tmp_path: Path
+) -> None:
+    upper_case_copy = tmp_path / "URBAN_BEEKEEPING.PDF"
+    upper_case_copy.write_bytes(PDF_SAMPLE.read_bytes())
+
+    exit_code = app.index("--file", str(upper_case_copy), "--strategy", "paragraph")
+
+    stored = app.repository.records_for(upper_case_copy.name, SplitStrategy.paragraph)
+    assert exit_code == ExitCode.SUCCESS
+    assert stored[0].text == "Urban Beekeeping: A Short Field Guide"
+    assert len(stored) == 11
 
 
 def test_search_prints_ranked_results_in_the_contract_format(app: App, capsys: pytest.CaptureFixture[str]) -> None:

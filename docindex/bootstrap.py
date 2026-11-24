@@ -9,7 +9,7 @@ from docindex.config import Settings
 from docindex.domain import SplitStrategy
 from docindex.embedding import Embedder
 from docindex.embedding.gemini import GeminiEmbedder
-from docindex.extraction import DocxExtractor
+from docindex.extraction import DocxExtractor, ExtractorRegistry, PdfExtractor, TextCleaner
 from docindex.services import IndexingService, SearchService
 from docindex.storage import ChunkRepository, PostgresChunkRepository
 
@@ -20,6 +20,12 @@ type RepositoryBuilder = Callable[[Settings], ChunkRepository]
 def build_gemini_embedder(settings: Settings) -> Embedder:
     """Build the Gemini-backed embedder."""
     return GeminiEmbedder(genai.Client(api_key=settings.gemini_api_key))
+
+
+def build_extractor_registry() -> ExtractorRegistry:
+    """Build the registry of supported document formats, sharing one set of clean-text rules."""
+    cleaner = TextCleaner()
+    return ExtractorRegistry({".pdf": PdfExtractor(cleaner), ".docx": DocxExtractor(cleaner)})
 
 
 def build_postgres_repository(settings: Settings) -> ChunkRepository:
@@ -41,7 +47,7 @@ class ServiceFactory:
     def build_indexing_service(self, settings: Settings) -> IndexingService:
         """Wire the indexing service for one run."""
         return IndexingService(
-            extractor=DocxExtractor(),
+            extractor=build_extractor_registry(),
             chunkers=ChunkerFactory({SplitStrategy.paragraph: ParagraphChunker()}),
             embedder=self._embedder_builder(settings),
             repository=self._repository_builder(settings),
