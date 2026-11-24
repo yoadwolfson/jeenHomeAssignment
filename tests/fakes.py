@@ -41,18 +41,29 @@ class FakeEmbedder:
 
 @dataclass
 class FakeChunkRepository:
-    """Keeps chunk sets keyed by (filename, strategy), like the real table."""
+    """Keeps chunk sets keyed by (filename, strategy), like the real table.
+
+    `connection_failure` is raised by every operation; `write_failure` only by `replace_chunks`,
+    which then leaves the stored sets untouched, as a rolled-back transaction would.
+    """
 
     chunk_sets: dict[tuple[str, SplitStrategy], list[ChunkRecord]] = field(default_factory=dict)
     schema_ensured: bool = False
+    connection_failure: BaseException | None = None
+    write_failure: BaseException | None = None
 
     def ensure_schema(self) -> None:
+        self._simulate_connect()
         self.schema_ensured = True
 
     def replace_chunks(self, filename: str, strategy: SplitStrategy, records: list[ChunkRecord]) -> None:
+        self._simulate_connect()
+        if self.write_failure is not None:
+            raise self.write_failure
         self.chunk_sets[(filename, strategy)] = list(records)
 
     def search(self, vector: list[float], top_k: int) -> list[SearchResult]:
+        self._simulate_connect()
         scored = [
             SearchResult(record.filename, record.strategy, record.chunk_index, record.text, _dot(vector, record.embedding))
             for records in self.chunk_sets.values()
@@ -62,6 +73,10 @@ class FakeChunkRepository:
 
     def records_for(self, filename: str, strategy: SplitStrategy) -> list[ChunkRecord]:
         return self.chunk_sets.get((filename, strategy), [])
+
+    def _simulate_connect(self) -> None:
+        if self.connection_failure is not None:
+            raise self.connection_failure
 
 
 def _dot(left: list[float], right: list[float]) -> float:

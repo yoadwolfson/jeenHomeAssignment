@@ -11,7 +11,8 @@ from docindex.commands import IndexCommand, SearchCommand
 from docindex.config import Settings
 from docindex.domain import MAX_CHUNK_CHARS, ChunkRecord, SplitStrategy
 from docindex.errors import (
-    ConfigurationError,
+    DatabaseConnectionError,
+    DatabaseOperationError,
     EmbeddingAuthError,
     EmbeddingError,
     EmbeddingQuotaError,
@@ -24,7 +25,15 @@ DOCX_SAMPLE = SAMPLES_DIR / "remote_work_policy.docx"
 DOCX_NAME = DOCX_SAMPLE.name
 PDF_SAMPLE = SAMPLES_DIR / "urban_beekeeping.pdf"
 PDF_PARAGRAPH_COUNT = 11
-TEST_SETTINGS = Settings(gemini_api_key="test-key", postgres_url="postgresql://user:pw@localhost:5432/test")
+TEST_API_KEY = "AIza-test-secret-api-key"
+TEST_DB_PASSWORD = "test-secret-db-password"
+TEST_SETTINGS = Settings(
+    gemini_api_key=TEST_API_KEY, postgres_url=f"postgresql://user:{TEST_DB_PASSWORD}@localhost:5432/test"
+)
+CONNECTION_ERROR_LINE = (
+    "Error: Cannot connect to PostgreSQL: check POSTGRES_URL in .env and that the database is running"
+)
+OPERATION_ERROR_LINE = "Error: Database operation failed; no changes were saved"
 
 
 class App:
@@ -33,13 +42,13 @@ class App:
     def __init__(self) -> None:
         self.embedder = FakeEmbedder()
         self.repository = FakeChunkRepository()
-        self._factory = ServiceFactory(
+        self.factory = ServiceFactory(
             embedder_builder=constant(self.embedder), repository_builder=constant(self.repository)
         )
 
     def index(self, *args: str) -> int:
         """Run index_documents.py with `args` and return its exit code."""
-        return run_cli(IndexCommand(self._factory, constant(TEST_SETTINGS)), list(args))
+        return run_cli(IndexCommand(self.factory, constant(TEST_SETTINGS)), list(args))
 
     def index_docx(self, strategy: str = "paragraph") -> int:
         """Index the DOCX sample with `strategy`."""
@@ -47,7 +56,7 @@ class App:
 
     def search(self, *args: str) -> int:
         """Run search.py with `args` and return its exit code."""
-        return run_cli(SearchCommand(self._factory, constant(TEST_SETTINGS)), list(args))
+        return run_cli(SearchCommand(self.factory, constant(TEST_SETTINGS)), list(args))
 
 
 @pytest.fixture
@@ -227,16 +236,28 @@ def test_argparse_rejects_a_bad_strategy_with_exit_2(app: App, arguments: tuple[
     assert app.embedder.embedded_texts == []
 
 
-def test_a_configuration_error_prints_its_message_and_exits_2(capsys: pytest.CaptureFixture[str]) -> None:
-    def missing_settings() -> Settings:
-        raise ConfigurationError("POSTGRES_URL")
+@pytest.mark.parametrize(
+    ("environ", "missing_variable"),
+    [
+        ({"GEMINI_API_KEY": "test-key"}, "POSTGRES_URL"),
+        ({"POSTGRES_URL": "postgresql://localhost/test"}, "GEMINI_API_KEY"),
+    ],
+    ids=["no-postgres-url", "no-api-key"],
+)
+def test_a_missing_environment_variable_names_it_and_exits_2_before_any_service_runs(
+    app: App, capsys: pytest.CaptureFixture[str], tmp_path: Path, environ: dict[str, str], missing_variable: str
+) -> None:
+    def load_settings() -> Settings:
+        return Settings.from_env(env_file=tmp_path / "absent.env", environ=environ)
 
-    exit_code = run_cli(SearchCommand(ServiceFactory(), missing_settings), ["--query", "anything"])
+    exit_code = run_cli(IndexCommand(app.factory, load_settings), ["--file", str(DOCX_SAMPLE), "--strategy", "fixed"])
 
-    assert exit_code == ExitCode.USAGE
-    assert capsys.readouterr().err.splitlines()[-1] == (
-        "Error: Missing environment variable POSTGRES_URL: copy .env.example to .env and fill it in"
+    assert exit_code == ExitCode.USAGE == 2
+    assert capsys.readouterr().err == (
+        f"Error: Missing environment variable {missing_variable}: copy .env.example to .env and fill it in\n"
     )
+    assert app.embedder.embedded_texts == []
+    assert not app.repository.schema_ensured
 
 
 def test_ctrl_c_prints_interrupted_and_exits_130(app: App, capsys: pytest.CaptureFixture[str]) -> None:
@@ -326,3 +347,85 @@ def test_an_embedding_error_shows_its_cause_only_under_verbose(app: App, capsys:
     assert quiet_exit == verbose_exit == ExitCode.EMBEDDING
     assert "secret upstream detail" not in quiet_err
     assert "secret upstream detail" in verbose_err
+
+
+@pytest.mark.parametrize(
+    "run_script",
+    [App.index_docx, lambda app: app.search("--query", "anything")],
+    ids=["index", "search"],
+)
+def test_an_unreachable_database_exits_5_before_anything_is_embedded(
+    app: App, capsys: pytest.CaptureFixture[str], run_script: Callable[[App], int]
+) -> None:
+    app.repository.connection_failure = DatabaseConnectionError()
+
+    exit_code = run_script(app)
+
+    assert exit_code == ExitCode.DATABASE == 5
+    assert capsys.readouterr().err.splitlines()[-1] == CONNECTION_ERROR_LINE
+    assert app.embedder.embedded_texts == []
+
+
+def test_a_failed_write_exits_5_and_keeps_the_earlier_chunks(app: App, capsys: pytest.CaptureFixture[str]) -> None:
+    earlier_set = [ChunkRecord(DOCX_NAME, SplitStrategy.paragraph, 0, "earlier chunk", bag_of_letters_vector("x"))]
+    app.repository.replace_chunks(DOCX_NAME, SplitStrategy.paragraph, earlier_set)
+    app.repository.write_failure = DatabaseOperationError()
+
+    exit_code = app.index_docx()
+
+    assert exit_code == ExitCode.DATABASE == 5
+    assert capsys.readouterr().err.splitlines()[-1] == OPERATION_ERROR_LINE
+    assert app.repository.chunk_sets == {(DOCX_NAME, SplitStrategy.paragraph): earlier_set}
+
+
+def _fail_to_connect(app: App) -> None:
+    app.repository.connection_failure = DatabaseConnectionError()
+
+
+def _fail_the_write(app: App) -> None:
+    app.repository.write_failure = DatabaseOperationError()
+
+
+def _fail_the_embedding(app: App) -> None:
+    app.embedder.failure = EmbeddingAuthError()
+
+
+def _crash_unexpectedly(app: App) -> None:
+    app.embedder.failure = RuntimeError("internal bug")
+
+
+def _break_nothing(_app: App) -> None:
+    pass
+
+
+@pytest.mark.parametrize(
+    ("break_something", "index_exit", "search_exit"),
+    [
+        (_break_nothing, ExitCode.SUCCESS, ExitCode.SUCCESS),
+        (_fail_to_connect, ExitCode.DATABASE, ExitCode.DATABASE),
+        # Search never writes, so a failing write only breaks indexing.
+        (_fail_the_write, ExitCode.DATABASE, ExitCode.SUCCESS),
+        (_fail_the_embedding, ExitCode.EMBEDDING, ExitCode.EMBEDDING),
+        (_crash_unexpectedly, ExitCode.UNEXPECTED, ExitCode.UNEXPECTED),
+    ],
+    ids=["success", "connection-failure", "write-failure", "embedding-failure", "unexpected-failure"],
+)
+def test_a_verbose_run_of_either_script_never_prints_the_api_key_or_the_database_password(
+    app: App,
+    capsys: pytest.CaptureFixture[str],
+    break_something: Callable[[App], None],
+    index_exit: ExitCode,
+    search_exit: ExitCode,
+) -> None:
+    break_something(app)
+
+    exit_codes = (
+        app.index("--file", str(DOCX_SAMPLE), "--strategy", "paragraph", "--verbose"),
+        app.search("--query", "laptop", "--verbose"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_codes == (index_exit, search_exit)
+    for secret in (TEST_API_KEY, TEST_DB_PASSWORD):
+        assert secret not in captured.out
+        assert secret not in captured.err

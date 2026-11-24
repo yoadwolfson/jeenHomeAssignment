@@ -87,3 +87,21 @@ class EmbeddingServiceError(EmbeddingError):
     def __init__(self, reason: str) -> None:
         super().__init__(f"Gemini embedding request failed: {reason}")
         self.reason = reason
+
+
+class DatabaseError(DocIndexError):
+    """PostgreSQL could not be reached or an operation on it failed."""
+
+
+class DatabaseConnectionError(DatabaseError):
+    """No connection to PostgreSQL could be opened."""
+
+    def __init__(self) -> None:
+        super().__init__("Cannot connect to PostgreSQL: check POSTGRES_URL in .env and that the database is running")
+
+
+class DatabaseOperationError(DatabaseError):
+    """A DDL statement, write or query failed; its transaction was rolled back."""
+
+    def __init__(self) -> None:
+        super().__init__("Database operation failed; no changes were saved")

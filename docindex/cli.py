@@ -8,12 +8,13 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Protocol
 
-from docindex.errors import ConfigurationError, DocIndexError, DocumentError, EmbeddingError
+from docindex.errors import ConfigurationError, DatabaseError, DocIndexError, DocumentError, EmbeddingError
 
-# google-genai 3.6.1 logs through httpx2, a fork of httpx.
-QUIET_LOGGERS = ("httpx", "httpx2", "google_genai")
-# pypdf logs a WARNING (e.g. "invalid pdf header") before failing on a bad file; our one Error line already says it.
-VERBOSE_ONLY_LOGGERS = ("pypdf",)
+# google-genai 3.6.1 logs through httpx2 (a fork of httpx); its transport httpcore2 logs each request at DEBUG.
+QUIET_LOGGERS = ("httpx", "httpx2", "httpcore2", "google_genai")
+# Libraries that log a WARNING on a failure our one Error line already reports: pypdf ("invalid pdf header")
+# and psycopg ("error ignored in rollback" when the connection dropped).
+VERBOSE_ONLY_LOGGERS = ("pypdf", "psycopg")
 OUTPUT_ENCODING = "utf-8"
 LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
 UNEXPECTED_FAILURE_MESSAGE = "unexpected failure (run with --verbose for details)"
@@ -39,6 +40,7 @@ EXIT_CODES_BY_ERROR: dict[type[DocIndexError], ExitCode] = {
     ConfigurationError: ExitCode.USAGE,
     DocumentError: ExitCode.DOCUMENT,
     EmbeddingError: ExitCode.EMBEDDING,
+    DatabaseError: ExitCode.DATABASE,
 }
 
 
