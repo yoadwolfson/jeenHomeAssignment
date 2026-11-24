@@ -154,181 +154,72 @@ The files in `samples/` are committed. To regenerate them, run
 
 ## 6. Sample runs
 
-These are real runs on a fresh volume (`docker compose down -v && docker
-compose up -d`), in order. They were captured on Windows, which is why one path
-prints with `\`. In PowerShell, use `$LASTEXITCODE` instead of `$?`.
+These are real outputs from a fresh database. Long chunk text is trimmed with `…`.
+
+**Indexing.** Progress goes to stderr, and the result line goes to stdout:
 
 ```text
-$ python search.py --query "how do I stop bees swarming"
-INFO docindex.storage.postgres: Connected to PostgreSQL (host=localhost, database=docindex) and ensured the schema
-No results found for "how do I stop bees swarming". Index a document first with index_documents.py.
-$ echo $?
-0
-
 $ python index_documents.py --file samples/urban_beekeeping.pdf --strategy fixed
 INFO docindex.services.indexing: Extracted 3541 characters from urban_beekeeping.pdf
 INFO docindex.services.indexing: Split into 5 chunks with strategy 'fixed'
 INFO docindex.storage.postgres: Connected to PostgreSQL (host=localhost, database=docindex) and ensured the schema
 INFO docindex.embedding.gemini: Embedding batch 1/1 (5 chunks)
 Indexed urban_beekeeping.pdf with strategy 'fixed': 5 chunks stored (replaced previous chunks for this file and strategy, if any).
-
-$ python index_documents.py --file samples/urban_beekeeping.pdf --strategy sentence 2>/dev/null
-Indexed urban_beekeeping.pdf with strategy 'sentence': 4 chunks stored (replaced previous chunks for this file and strategy, if any).
-
-$ python index_documents.py --file samples/urban_beekeeping.pdf --strategy paragraph 2>/dev/null
-Indexed urban_beekeeping.pdf with strategy 'paragraph': 11 chunks stored (replaced previous chunks for this file and strategy, if any).
-
-$ python index_documents.py --file samples/remote_work_policy.docx --strategy paragraph 2>/dev/null
-Indexed remote_work_policy.docx with strategy 'paragraph': 6 chunks stored (replaced previous chunks for this file and strategy, if any).
-
-$ python index_documents.py --file samples/urban_beekeeping.pdf --strategy paragraph 2>/dev/null
-Indexed urban_beekeeping.pdf with strategy 'paragraph': 11 chunks stored (replaced previous chunks for this file and strategy, if any).
 ```
 
-**Searches** (expand each one for the full output):
+The same PDF gives 4 chunks with `sentence` and 11 with `paragraph`. The DOCX
+gives 6 chunks with `paragraph`.
 
-- **"how do I stop bees swarming"**: the `paragraph` chunk is exactly the
-  swarming paragraph and ranks first. Sentence packing split that topic across
-  two chunks, so the `sentence` chunks rank lower. This shows paragraph chunks
-  following topic boundaries.
-- **"what equipment does the company provide"**: all 5 results come from the
-  DOCX, and the table text is absent.
-- **"quarterly revenue forecast"**: an off-topic query still returns 5 weak
-  results, because there is no relevance threshold.
-
-<details><summary><code>search.py --query "how do I stop bees swarming"</code></summary>
+**Search.** This was run after indexing the PDF with all three strategies:
 
 ```text
 $ python search.py --query "how do I stop bees swarming" 2>/dev/null
 Results for "how do I stop bees swarming" (top 5):
 
 [1] urban_beekeeping.pdf · paragraph · chunk 4
-    Swarming is the natural way a colony reproduces. The old queen leaves with roughly half of the workers and settles on a branch or a lamp post while scouts search for a new home. In a city this frightens people, so urban keepers prevent swarms by giving the colony more space before it feels crowded, or by splitting it into two hives on purpose. A well timed split also replaces an ageing queen and gives the keeper a spare colony to fall back on if the original one fails over the winter.
+    Swarming is the natural way a colony reproduces. The old queen leaves with roughly half of the workers … if the original one fails over the winter.
 
 [2] urban_beekeeping.pdf · sentence · chunk 1
-    The old queen leaves with roughly half of the workers and settles on a branch or a lamp post while scouts search for a new home. In a city this frightens people, so urban keepers prevent swarms by giving the colony more space before it feels crowded, or by splitting it into two hives on purpose. A well timed split also replaces an ageing queen and gives the keeper a spare colony to fall back on if the original one fails over the winter. Varroa mites are the greatest threat to honey bee health worldwide. The mites feed on developing bees and spread viruses that deform wings and shorten lives. Most keepers count mites once a month by washing a sample of bees in alcohol or by counting the mites that fall onto a sticky board placed under the hive. When the count rises above a threshold the keeper treats the colony, ideally in late summer after the honey harvest and before the winter bees are raised.
+    The old queen leaves with roughly half of the workers … Varroa mites are the greatest threat to honey bee health worldwide. …
 
 [3] urban_beekeeping.pdf · fixed · chunk 1
-    warn that the colony is preparing to swarm, and for signs of disease such as discoloured or sunken brood cappings.
-    
-    Swarming is the natural way a colony reproduces. The old queen leaves with roughly half of the workers and settles on a branch or a lamp post while scouts search for a new home. In a city this frightens people, so urban keepers prevent swarms by giving the colony more space before it feels crowded, or by splitting it into two hives on purpose. A well timed split also replaces an ageing queen and gives the keeper a spare colony to fall back on if the original one fails over the winter.
-    
-    Varroa mites are the greatest threat to honey bee health worldwide. The mites feed on developing bees and spread viruses that deform wings and shorten lives. Most keepers count mites once a month by washing a sample of bees in alcohol or by counting the mites that fall onto a sticky board placed under the hive. When the count rises above a threshold the keeper treats the colony, ideally in
-
-[4] urban_beekeeping.pdf · sentence · chunk 0
-    Urban Beekeeping: A Short Field Guide Keeping honey bees in a city is easier than most people expect. A single hive needs about one square metre of ground, a water source within a few hundred metres, and a neighbour who does not mind the occasional visitor on a flowering shrub. The most important decision is where the hive entrance faces. An entrance turned towards a wall or a tall hedge forces foragers to climb steeply as they leave, which keeps their flight path above head height and reduces the colony's overall productivity only slightly while avoiding almost every conflict with people walking past. Inspections should happen every seven to ten days during spring and early summer. During each inspection the keeper looks for eggs, which prove the queen is laying, for queen cells, which warn that the colony is preparing to swarm, and for signs of disease such as discoloured or sunken brood cappings. Swarming is the natural way a colony reproduces.
-
-[5] urban_beekeeping.pdf · paragraph · chunk 3
-    Inspections should happen every seven to ten days during spring and early summer. During each inspection the keeper looks for eggs, which prove the queen is laying, for queen cells, which warn that the colony is preparing to swarm, and for signs of disease such as discoloured or sunken brood cappings.
+    warn that the colony is preparing to swarm, … Swarming is the natural way a colony reproduces. …
+…
 ```
-</details>
 
-<details><summary><code>search.py --query "what equipment does the company provide"</code></summary>
+The `paragraph` chunk ranks first because it is exactly the swarming paragraph.
+Sentence packing cut that topic in two and mixed it with the varroa text, which
+dilutes the embedding. A DOCX query (`"what equipment does the company
+provide"`) returns only policy paragraphs. An off-topic query still returns 5
+weak results, because there is no relevance threshold.
 
-```text
-$ python search.py --query "what equipment does the company provide" 2>/dev/null
-Results for "what equipment does the company provide" (top 5):
-
-[1] remote_work_policy.docx · paragraph · chunk 3
-    The company provides a laptop, a headset and a monthly allowance towards internet costs. Employees are responsible for a safe workspace and for keeping company devices locked when unattended. The finance team reimburses approved purchases within thirty days.
-
-[2] remote_work_policy.docx · paragraph · chunk 1
-    This policy explains how employees may work away from the office, what equipment the company provides, and how teams stay in touch across time zones.
-
-[3] remote_work_policy.docx · paragraph · chunk 5
-    Questions about this policy go to the people team. Requests for exceptions go to your manager first.
-
-[4] remote_work_policy.docx · paragraph · chunk 0
-    Remote Work Policy
-
-[5] remote_work_policy.docx · paragraph · chunk 2
-    Eligibility depends on the role rather than the person. Roles that need physical presence, such as laboratory work or reception, are not eligible. Every other role may be performed remotely for up to four days a week with the manager’s agreement.
-```
-</details>
-
-<details><summary><code>search.py --query "quarterly revenue forecast"</code></summary>
-
-```text
-$ python search.py --query "quarterly revenue forecast" 2>/dev/null
-Results for "quarterly revenue forecast" (top 5):
-
-[1] remote_work_policy.docx · paragraph · chunk 5
-    Questions about this policy go to the people team. Requests for exceptions go to your manager first.
-
-[2] remote_work_policy.docx · paragraph · chunk 3
-    The company provides a laptop, a headset and a monthly allowance towards internet costs. Employees are responsible for a safe workspace and for keeping company devices locked when unattended. The finance team reimburses approved purchases within thirty days.
-
-[3] urban_beekeeping.pdf · paragraph · chunk 8
-    apiary to the next.
-
-[4] remote_work_policy.docx · paragraph · chunk 4
-    Core hours run from ten in the morning until three in the afternoon in the team’s home time zone. Outside core hours people may arrange their day freely, as long as meetings are announced at least one working day in advance.
-
-[5] urban_beekeeping.pdf · sentence · chunk 0
-    Urban Beekeeping: A Short Field Guide Keeping honey bees in a city is easier than most people expect. A single hive needs about one square metre of ground, a water source within a few hundred metres, and a neighbour who does not mind the occasional visitor on a flowering shrub. The most important decision is where the hive entrance faces. An entrance turned towards a wall or a tall hedge forces foragers to climb steeply as they leave, which keeps their flight path above head height and reduces the colony's overall productivity only slightly while avoiding almost every conflict with people walking past. Inspections should happen every seven to ten days during spring and early summer. During each inspection the keeper looks for eggs, which prove the queen is laying, for queen cells, which warn that the colony is preparing to swarm, and for signs of disease such as discoloured or sunken brood cappings. Swarming is the natural way a colony reproduces.
-```
-</details>
-
-**Database rows.** There is one row group per file and split strategy (four in
-all). The re-indexed `paragraph` group still has 11 rows from a single indexing
-run, so the replace worked. Every vector has 1536 dimensions and unit length. A
-double space in `text_start` is a flattened `\n\n` paragraph break.
+**Stored rows.** Re-indexing replaces rows instead of duplicating them. The
+re-indexed `paragraph` set still has 11 rows from a single indexing run:
 
 ```text
 $ docker compose exec db psql -U postgres -d docindex -c "SELECT filename, split_strategy, count(*) AS chunks, count(DISTINCT created_at) AS runs FROM chunks GROUP BY 1, 2 ORDER BY 1, 2;"
-        filename         | split_strategy | chunks | runs 
+        filename         | split_strategy | chunks | runs
 -------------------------+----------------+--------+------
  remote_work_policy.docx | paragraph      |      6 |    1
  urban_beekeeping.pdf    | fixed          |      5 |    1
  urban_beekeeping.pdf    | paragraph      |     11 |    1
  urban_beekeeping.pdf    | sentence       |      4 |    1
-(4 rows)
-
-$ docker compose exec db psql -U postgres -d docindex -c "SELECT id, filename, split_strategy, chunk_index, replace(left(chunk_text, 40), E'\n', ' ') AS text_start, vector_dims(embedding) AS dims, round(vector_norm(embedding)::numeric, 3) AS norm, created_at FROM chunks ORDER BY id LIMIT 5;"
- id |       filename       | split_strategy | chunk_index |                text_start                | dims | norm  |          created_at           
-----+----------------------+----------------+-------------+------------------------------------------+------+-------+-------------------------------
-  1 | urban_beekeeping.pdf | fixed          |           0 | Urban Beekeeping: A Short Field Guide  K | 1536 | 1.000 | 2026-11-24 16:02:54.418203+00
-  2 | urban_beekeeping.pdf | fixed          |           1 | warn that the colony is preparing to swa | 1536 | 1.000 | 2026-11-24 16:02:54.418203+00
-  3 | urban_beekeeping.pdf | fixed          |           2 | by washing a sample of bees in alcohol o | 1536 | 1.000 | 2026-11-24 16:02:54.418203+00
-  4 | urban_beekeeping.pdf | fixed          |           3 | limit the number of colonies per garden  | 1536 | 1.000 | 2026-11-24 16:02:54.418203+00
-  5 | urban_beekeeping.pdf | fixed          |           4 | colony nearby.  Winter is a quiet season | 1536 | 1.000 | 2026-11-24 16:02:54.418203+00
-(5 rows)
 ```
 
-**Error demos.** Each prints a single `Error:` line (the bad-key run also shows
-its progress logs, which come before the Gemini call). The key override is inline, so
-`.env` is untouched. In PowerShell, use `$env:GEMINI_API_KEY='invalid'; python
-...; Remove-Item Env:GEMINI_API_KEY`.
+Every stored vector has `vector_dims = 1536` and `vector_norm = 1.000`.
 
-```text
-$ python index_documents.py --file samples/nope.pdf --strategy paragraph; echo $?
-Error: File not found: samples\nope.pdf
-3
-$ python index_documents.py --file requirements.txt --strategy paragraph; echo $?
-Error: Unsupported file type '.txt': only .pdf and .docx are supported
-3
-$ python index_documents.py --file samples/scanned_no_text.pdf --strategy paragraph; echo $?
-Error: No extractable text in scanned_no_text.pdf (it may be a scanned image; OCR is not supported)
-3
-$ python index_documents.py --file samples/empty.docx --strategy paragraph; echo $?
-Error: No extractable text in empty.docx
-3
-$ GEMINI_API_KEY=invalid python index_documents.py --file samples/remote_work_policy.docx --strategy paragraph; echo $?
-INFO docindex.services.indexing: Extracted 1005 characters from remote_work_policy.docx
-INFO docindex.services.indexing: Split into 6 chunks with strategy 'paragraph'
-INFO docindex.storage.postgres: Connected to PostgreSQL (host=localhost, database=docindex) and ensured the schema
-INFO docindex.embedding.gemini: Embedding batch 1/1 (6 chunks)
-Error: Gemini rejected the API key: check GEMINI_API_KEY in .env
-4
-$ docker compose stop db
-$ python search.py --query "how do I stop bees swarming"; echo $?
-Error: Cannot connect to PostgreSQL: check POSTGRES_URL in .env and that the database is running
-5
-$ docker compose start db
-```
+**Errors.** Each one prints a single `Error:` line on stderr. In PowerShell,
+check `$LASTEXITCODE` instead of `$?`.
 
-Not demoed: an unreadable file (`echo garbage > fake.pdf`) and the quota error.
-The tests cover both.
+| Command | Output | `$?` |
+|---|---|---|
+| `search.py` on an empty database | `No results found for "…". Index a document first with index_documents.py.` | 0 |
+| `--file samples/nope.pdf` | `Error: File not found: samples/nope.pdf` | 3 |
+| `--file requirements.txt` | `Error: Unsupported file type '.txt': only .pdf and .docx are supported` | 3 |
+| `--file samples/scanned_no_text.pdf` | `Error: No extractable text in scanned_no_text.pdf (it may be a scanned image; OCR is not supported)` | 3 |
+| `--file samples/empty.docx` | `Error: No extractable text in empty.docx` | 3 |
+| `GEMINI_API_KEY=invalid python index_documents.py …` (PowerShell: `$env:GEMINI_API_KEY='invalid'; …; Remove-Item Env:GEMINI_API_KEY`) | `Error: Gemini rejected the API key: check GEMINI_API_KEY in .env` | 4 |
+| any script after `docker compose stop db` | `Error: Cannot connect to PostgreSQL: check POSTGRES_URL in .env and that the database is running` | 5 |
 
 ## 7. Assumptions & limitations
 
@@ -340,8 +231,8 @@ The tests cover both.
   - Multi-column pages interleave their columns.
   - The samples are synthetic (fpdf2), and other producers may space paragraphs
     differently.
-  - A paragraph that spans a page break becomes two paragraphs (see
-    `apiary to the next.` above).
+  - A paragraph that spans a page break becomes two paragraphs (in the
+    sample, the tail `apiary to the next.` is its own chunk).
 - **Cleaning:**
   - Hyphen rejoining turns `well-`/`known` at a line end into `wellknown`.
   - Only page-number lines are dropped, so running headers are kept. A line that
