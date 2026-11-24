@@ -236,6 +236,18 @@ def test_argparse_rejects_a_bad_strategy_with_exit_2(app: App, arguments: tuple[
     assert app.embedder.embedded_texts == []
 
 
+@pytest.mark.parametrize("blank_query", ["", "   ", "\t\n"], ids=["empty", "spaces", "tab-newline"])
+def test_a_blank_query_is_rejected_with_exit_2_before_any_service_runs(
+    app: App, capsys: pytest.CaptureFixture[str], blank_query: str
+) -> None:
+    exit_code = app.search("--query", blank_query)
+
+    assert exit_code == ExitCode.USAGE == 2
+    assert "query must not be empty" in capsys.readouterr().err
+    assert app.embedder.embedded_texts == []
+    assert not app.repository.schema_ensured
+
+
 @pytest.mark.parametrize(
     ("environ", "missing_variable"),
     [

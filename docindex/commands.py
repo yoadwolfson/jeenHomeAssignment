@@ -46,7 +46,7 @@ class SearchCommand:
     def build_parser(self) -> argparse.ArgumentParser:
         """Return the parser for --query."""
         parser = argparse.ArgumentParser(description="Search the indexed documents.")
-        parser.add_argument("--query", required=True, help="a natural-language question")
+        parser.add_argument("--query", required=True, type=non_blank_query, help="a natural-language question")
         return parser
 
     def run(self, arguments: argparse.Namespace) -> ExitCode:
@@ -55,6 +55,15 @@ class SearchCommand:
         results = service.search(arguments.query)
         print(render_search_results(arguments.query, results, service.top_k))
         return ExitCode.SUCCESS
+
+
+def non_blank_query(raw_query: str) -> str:
+    """Argparse type for --query: reject blank input as a usage error, stripped of surrounding whitespace."""
+    query = raw_query.strip()
+    # Gemini rejects empty content with a 400, which would wrongly surface as an embedding failure.
+    if not query:
+        raise argparse.ArgumentTypeError("query must not be empty")
+    return query
 
 
 def render_indexing_report(report: IndexingReport) -> str:
