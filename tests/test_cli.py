@@ -8,7 +8,7 @@ from docindex.bootstrap import ServiceFactory
 from docindex.cli import ExitCode, run_cli
 from docindex.commands import IndexCommand, SearchCommand
 from docindex.config import Settings
-from docindex.domain import ChunkRecord, SplitStrategy
+from docindex.domain import MAX_CHUNK_CHARS, ChunkRecord, SplitStrategy
 from docindex.errors import ConfigurationError
 from tests.fakes import FakeChunkRepository, FakeEmbedder, bag_of_letters_vector, constant
 
@@ -16,6 +16,7 @@ SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 DOCX_SAMPLE = SAMPLES_DIR / "remote_work_policy.docx"
 DOCX_NAME = DOCX_SAMPLE.name
 PDF_SAMPLE = SAMPLES_DIR / "urban_beekeeping.pdf"
+PDF_PARAGRAPH_COUNT = 11
 TEST_SETTINGS = Settings(gemini_api_key="test-key", postgres_url="postgresql://user:pw@localhost:5432/test")
 
 
@@ -75,7 +76,7 @@ def test_indexing_a_pdf_with_an_upper_case_extension_stores_one_chunk_per_paragr
     stored = app.repository.records_for(upper_case_copy.name, SplitStrategy.paragraph)
     assert exit_code == ExitCode.SUCCESS
     assert stored[0].text == "Urban Beekeeping: A Short Field Guide"
-    assert len(stored) == 11
+    assert len(stored) == PDF_PARAGRAPH_COUNT
 
 
 def test_search_prints_ranked_results_in_the_contract_format(app: App, capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,6 +140,21 @@ def test_indexing_with_another_strategy_keeps_the_existing_set_side_by_side(app:
 
     assert app.repository.records_for(DOCX_NAME, SplitStrategy.fixed) == fixed_set
     assert app.repository.records_for(DOCX_NAME, SplitStrategy.paragraph)
+
+
+def test_indexing_a_pdf_with_fixed_stores_bounded_chunks_beside_the_paragraph_set(app: App) -> None:
+    app.index("--file", str(PDF_SAMPLE), "--strategy", "paragraph")
+
+    exit_code = app.index("--file", str(PDF_SAMPLE), "--strategy", "fixed")
+
+    fixed_set = app.repository.records_for(PDF_SAMPLE.name, SplitStrategy.fixed)
+    assert exit_code == ExitCode.SUCCESS
+    assert len(fixed_set) > 1
+    assert all(len(record.text) <= MAX_CHUNK_CHARS for record in fixed_set)
+    assert [record.chunk_index for record in fixed_set] == list(range(len(fixed_set)))
+    # Positional, not structural: the first chunk runs past the title into the next paragraph.
+    assert fixed_set[0].text.startswith("Urban Beekeeping: A Short Field Guide\n\n")
+    assert len(app.repository.records_for(PDF_SAMPLE.name, SplitStrategy.paragraph)) == PDF_PARAGRAPH_COUNT
 
 
 def test_an_unexpected_exception_prints_a_generic_message_and_exits_1(

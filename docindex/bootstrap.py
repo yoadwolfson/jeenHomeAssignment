@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from google import genai
 
-from docindex.chunking import ChunkerFactory, ParagraphChunker
+from docindex.chunking import ChunkerFactory, FixedSizeChunker, ParagraphChunker
 from docindex.config import Settings
 from docindex.domain import SplitStrategy
 from docindex.embedding import Embedder
@@ -48,7 +48,9 @@ class ServiceFactory:
         """Wire the indexing service for one run."""
         return IndexingService(
             extractor=build_extractor_registry(),
-            chunkers=ChunkerFactory({SplitStrategy.paragraph: ParagraphChunker()}),
+            chunkers=ChunkerFactory(
+                {SplitStrategy.fixed: FixedSizeChunker(), SplitStrategy.paragraph: ParagraphChunker()}
+            ),
             embedder=self._embedder_builder(settings),
             repository=self._repository_builder(settings),
         )

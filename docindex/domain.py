@@ -5,6 +5,8 @@ from enum import StrEnum
 
 EMBEDDING_DIMENSIONS = 1536
 DEFAULT_TOP_K = 5
+# Shared ceiling for every split strategy; ~250 English tokens, far under Gemini's 2,048-token input limit.
+MAX_CHUNK_CHARS = 1000
 # The only paragraph separator in clean text.
 PARAGRAPH_SEPARATOR = "\n\n"
 
