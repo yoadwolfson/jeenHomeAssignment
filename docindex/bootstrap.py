@@ -4,7 +4,13 @@ from collections.abc import Callable
 
 from google import genai
 
-from docindex.chunking import ChunkerFactory, FixedSizeChunker, ParagraphChunker
+from docindex.chunking import (
+    ChunkerFactory,
+    FixedSizeChunker,
+    ParagraphChunker,
+    PysbdSentenceSplitter,
+    SentenceChunker,
+)
 from docindex.config import Settings
 from docindex.domain import SplitStrategy
 from docindex.embedding import Embedder
@@ -28,6 +34,18 @@ def build_extractor_registry() -> ExtractorRegistry:
     return ExtractorRegistry({".pdf": PdfExtractor(cleaner), ".docx": DocxExtractor(cleaner)})
 
 
+def build_chunker_factory() -> ChunkerFactory:
+    """Build the chunker for every split strategy, sharing one English sentence splitter."""
+    splitter = PysbdSentenceSplitter()
+    return ChunkerFactory(
+        {
+            SplitStrategy.fixed: FixedSizeChunker(),
+            SplitStrategy.sentence: SentenceChunker(splitter),
+            SplitStrategy.paragraph: ParagraphChunker(splitter),
+        }
+    )
+
+
 def build_postgres_repository(settings: Settings) -> ChunkRepository:
     """Build the pgvector-backed chunk repository."""
     return PostgresChunkRepository(settings.postgres_url)
@@ -48,9 +66,7 @@ class ServiceFactory:
         """Wire the indexing service for one run."""
         return IndexingService(
             extractor=build_extractor_registry(),
-            chunkers=ChunkerFactory(
-                {SplitStrategy.fixed: FixedSizeChunker(), SplitStrategy.paragraph: ParagraphChunker()}
-            ),
+            chunkers=build_chunker_factory(),
             embedder=self._embedder_builder(settings),
             repository=self._repository_builder(settings),
         )

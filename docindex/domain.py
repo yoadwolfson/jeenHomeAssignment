@@ -11,6 +11,12 @@ MAX_CHUNK_CHARS = 1000
 PARAGRAPH_SEPARATOR = "\n\n"
 
 
+def paragraphs(clean_text: str) -> list[str]:
+    """Return the stripped, non-empty paragraphs of clean text in document order."""
+    stripped = (paragraph.strip() for paragraph in clean_text.split(PARAGRAPH_SEPARATOR))
+    return [paragraph for paragraph in stripped if paragraph]
+
+
 class SplitStrategy(StrEnum):
     """The rule used to cut clean text into chunks."""
 

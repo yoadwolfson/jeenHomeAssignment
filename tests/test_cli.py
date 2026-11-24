@@ -157,6 +157,27 @@ def test_indexing_a_pdf_with_fixed_stores_bounded_chunks_beside_the_paragraph_se
     assert len(app.repository.records_for(PDF_SAMPLE.name, SplitStrategy.paragraph)) == PDF_PARAGRAPH_COUNT
 
 
+@pytest.mark.parametrize("strategy", list(SplitStrategy))
+def test_every_split_strategy_indexes_the_docx(app: App, strategy: SplitStrategy) -> None:
+    exit_code = app.index_docx(strategy.value)
+
+    assert exit_code == ExitCode.SUCCESS
+    assert app.repository.records_for(DOCX_NAME, strategy)
+
+
+def test_indexing_a_pdf_with_sentence_packs_whole_sentences_up_to_the_maximum(app: App) -> None:
+    exit_code = app.index("--file", str(PDF_SAMPLE), "--strategy", "sentence")
+
+    sentence_set = app.repository.records_for(PDF_SAMPLE.name, SplitStrategy.sentence)
+    assert exit_code == ExitCode.SUCCESS
+    assert 1 < len(sentence_set) < PDF_PARAGRAPH_COUNT
+    assert all(len(record.text) <= MAX_CHUNK_CHARS for record in sentence_set)
+    assert [record.chunk_index for record in sentence_set] == list(range(len(sentence_set)))
+    # Packed across paragraphs: the title shares the first chunk with the sentences that follow it.
+    assert sentence_set[0].text.startswith("Urban Beekeeping: A Short Field Guide ")
+    assert all(record.text.endswith((".", "!", "?")) for record in sentence_set)
+
+
 def test_an_unexpected_exception_prints_a_generic_message_and_exits_1(
     app: App, capsys: pytest.CaptureFixture[str]
 ) -> None:
