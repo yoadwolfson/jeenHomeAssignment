@@ -182,6 +182,21 @@ $ docker compose exec db psql -U postgres -d docindex -c "SELECT filename, split
  urban_beekeeping.pdf    | sentence       |     4
 ```
 
+The stored rows themselves, with every column of the table (the chunk text and
+the 1,536-number embedding are cut short here so they fit):
+
+```text
+$ docker compose exec db psql -U postgres -d docindex -c "SELECT id, filename, split_strategy, chunk_index, left(chunk_text, 40) AS chunk_text, left(embedding::text, 24) || '...' AS embedding, vector_dims(embedding) AS dims, created_at FROM chunks WHERE filename = 'urban_beekeeping.pdf' AND split_strategy = 'paragraph' ORDER BY chunk_index LIMIT 5;"
+ id  |       filename       | split_strategy | chunk_index |                chunk_text                |          embedding          | dims |          created_at
+-----+----------------------+----------------+-------------+------------------------------------------+-----------------------------+------+-------------------------------
+ 153 | urban_beekeeping.pdf | paragraph      |           0 | Urban Beekeeping: A Short Field Guide    | [-0.0069114277,-0.006414... | 1536 | 2026-11-25 08:06:47.150354+00
+ 154 | urban_beekeeping.pdf | paragraph      |           1 | Keeping honey bees in a city is easier t | [0.012676802,0.007724783... | 1536 | 2026-11-25 08:06:47.150354+00
+ 155 | urban_beekeeping.pdf | paragraph      |           2 | The most important decision is where the | [-0.0027353235,0.0088552... | 1536 | 2026-11-25 08:06:47.150354+00
+ 156 | urban_beekeeping.pdf | paragraph      |           3 | Inspections should happen every seven to | [-0.025841651,0.04651050... | 1536 | 2026-11-25 08:06:47.150354+00
+ 157 | urban_beekeeping.pdf | paragraph      |           4 | Swarming is the natural way a colony rep | [-0.0076873475,0.0009557... | 1536 | 2026-11-25 08:06:47.150354+00
+(5 rows)
+```
+
 Errors (in PowerShell, use `$LASTEXITCODE` instead of `$?`):
 
 ```text
